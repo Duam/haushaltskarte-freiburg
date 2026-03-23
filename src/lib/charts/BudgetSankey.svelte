@@ -334,7 +334,12 @@
 			onpointerleave={clearChartTooltips}
 			role="presentation"
 		>
-			<Chart {data} padding={chartPadding}>
+			<Chart
+				{data}
+				padding={chartPadding}
+				width={mapMode ? mapWidth : undefined}
+				height={mapMode ? mapHeight : undefined}
+			>
 				<Svg>
 					<!-- layerchart: nodeSort typisiert fälschlich nur undefined; d3-sankey unterstützt Comparator -->
 					<Sankey

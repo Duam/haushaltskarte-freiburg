@@ -39,4 +39,16 @@ npm run build
 
 You can preview the production build with `npm run preview`.
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+### GitHub Pages (`https://duam.github.io/haushaltskarte-freiburg/`)
+
+The app uses [`@sveltejs/adapter-static`](https://svelte.dev/docs/kit/adapter-static) and `paths.base` from the environment variable `BASE_PATH` (unset locally = site root).
+
+- **CI:** Push to `main` or `master` runs [`.github/workflows/deploy-github-pages.yml`](.github/workflows/deploy-github-pages.yml), which builds with `BASE_PATH=/haushaltskarte-freiburg` and deploys the `build/` folder via [GitHub Actions Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site#publishing-with-a-custom-github-actions-workflow).
+- **Repo settings:** **Settings → Pages → Build and deployment** → Source: **GitHub Actions** (first-time setup).
+- **Local production preview (same base as Pages):**
+
+```sh
+npm run build:gh-pages && npm run preview:gh-pages
+```
+
+`static/.nojekyll` disables Jekyll so folders like `_app` are served correctly.

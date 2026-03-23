@@ -57,3 +57,8 @@
 		@apply bg-background text-foreground antialiased;
 	}
 }
+
+/* THH61 map view: momentum scrolling on iOS */
+.map-canvas-scroll {
+	-webkit-overflow-scrolling: touch;
+}

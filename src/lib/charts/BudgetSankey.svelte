@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { sankeyJustify } from 'd3-sankey';
 	import { Chart, Svg, Sankey, Link, Rect } from 'layerchart';
+	import { tooltipPortal } from '$lib/actions/tooltip-portal.js';
 	import type { SankeyGraphJson } from '$lib/data/budget-types.js';
 	import { normalizeFreiburgHaushaltLabel } from '$lib/data/csv-label-normalize.js';
 	import { formatEur } from '$lib/format-eur.js';
@@ -15,12 +16,30 @@
 		layoutFlowScale = 1,
 		/** Gleiche Außenmaße/Padding wie der THH61-Pool-Sankey — für visuellen Vergleich */
 		matchSteuernPoolLayout = false,
+		/**
+		 * Großer „Karten“-Modus: feste Pixelgröße, kein Seitenverhältnis — Eltern scrollt/pannt.
+		 */
+		mapMode = false,
+		mapWidth = 3400,
+		mapHeight = 2600,
+		/**
+		 * mapMode + Karten-Zoom: reine Viewport-Fit-Skalierung (ohne zoomFactor).
+		 * SVG-Schriftgröße = mapLabelTargetScreenPx / mapViewportFitScale, damit nach CSS-scale
+		 * die Lesbarkeit passt und mit totalScale mitwächst.
+		 */
+		mapViewportFitScale = 0,
+		mapLabelTargetScreenPx = 15,
 	}: {
 		graph: SankeyGraphJson;
 		/** Steuert Spaltenbezeichnungen in Tooltips / Titeln */
 		variant?: 'product' | 'expense' | 'steuern' | 'steuernPool';
 		layoutFlowScale?: number;
 		matchSteuernPoolLayout?: boolean;
+		mapMode?: boolean;
+		mapWidth?: number;
+		mapHeight?: number;
+		mapViewportFitScale?: number;
+		mapLabelTargetScreenPx?: number;
 	} = $props();
 
 	type LayoutLinkDatum = SankeyGraphJson['links'][number] & { originalValue?: number };
@@ -67,6 +86,21 @@
 
 	const rescaleNodeTooltip = $derived(Math.abs(layoutFlowScale - 1) > 1e-9);
 
+	/** SVG px für Beschriftungen im mapMode (Kompensation der äußeren CSS-scale). */
+	const mapSvgLabelPx = $derived(
+		mapMode && mapViewportFitScale > 1e-9
+			? Math.min(80, Math.max(12, mapLabelTargetScreenPx / mapViewportFitScale))
+			: null
+	);
+
+	const mapLabelStrokePx = $derived(
+		mapSvgLabelPx !== null ? Math.max(2.5, Math.min(9, mapSvgLabelPx * 0.24)) : 4
+	);
+
+	const mapLabelPad = $derived(
+		mapSvgLabelPx !== null ? Math.max(8, mapSvgLabelPx * 0.52) : 8
+	);
+
 	/**
 	 * d3-sankey sortiert ohne `nodeSort` nach berechneter Breite und verwirft die Input-Reihenfolge.
 	 * THH61: feste Index-Sortierung. Steuertopf-Graph nutzt `column` aus den Daten — reine Quellen hätten
@@ -87,13 +121,28 @@
 			: {}
 	);
 
-	const chartPadding = $derived(
-		variant === 'steuernPool' || matchSteuernPoolLayout
-			? { top: 28, bottom: 16, left: 236, right: 220 }
-			: variant === 'steuern'
-				? { top: 14, bottom: 14, left: 236, right: 188 }
-				: { top: 14, bottom: 14, left: 156, right: 172 }
-	);
+	const chartPadding = $derived.by(() => {
+		if (mapMode && (variant === 'steuernPool' || matchSteuernPoolLayout)) {
+			const base = { top: 44, bottom: 32, left: 300, right: 288 };
+			if (mapSvgLabelPx !== null && mapSvgLabelPx > 14) {
+				const e = mapSvgLabelPx - 13;
+				return {
+					top: Math.round(base.top + e * 1.15),
+					bottom: base.bottom,
+					left: Math.round(base.left + e * 0.5),
+					right: Math.round(base.right + e * 0.4),
+				};
+			}
+			return base;
+		}
+		if (variant === 'steuernPool' || matchSteuernPoolLayout) {
+			return { top: 28, bottom: 16, left: 236, right: 220 };
+		}
+		if (variant === 'steuern') {
+			return { top: 14, bottom: 14, left: 236, right: 188 };
+		}
+		return { top: 14, bottom: 14, left: 156, right: 172 };
+	});
 
 	const linkStrokeDefault = $derived(
 		variant === 'steuern' ? 'oklch(0.48 0.14 152 / 0.55)' : 'oklch(0.45 0.12 264 / 0.55)'
@@ -249,13 +298,15 @@
 </script>
 
 <div
-	class="bg-card text-card-foreground relative w-full overflow-visible rounded-xl ring-1 ring-foreground/10"
+	class="bg-card text-card-foreground relative w-full overflow-visible rounded-xl ring-1 ring-foreground/10 {mapMode
+		? 'rounded-none ring-0'
+		: ''}"
 >
 	<div
-		class="relative aspect-[21/9] w-full min-h-[320px] md:min-h-[480px] {variant === 'steuernPool' ||
-		matchSteuernPoolLayout
-			? 'md:min-h-[520px]'
-			: ''}"
+		class="relative w-full min-h-0 {mapMode
+			? ''
+			: `aspect-[21/9] min-h-[320px] md:min-h-[480px] ${variant === 'steuernPool' || matchSteuernPoolLayout ? 'md:min-h-[520px]' : ''}`}"
+		style={mapMode ? `width:${mapWidth}px;height:${mapHeight}px;` : undefined}
 	>
 		<div
 			class="absolute inset-0 min-h-0"
@@ -266,8 +317,8 @@
 				<Svg>
 					<!-- layerchart: nodeSort typisiert fälschlich nur undefined; d3-sankey unterstützt Comparator -->
 					<Sankey
-						nodeWidth={12}
-						nodePadding={8}
+						nodeWidth={mapMode ? 16 : 12}
+						nodePadding={mapMode ? 10 : 8}
 						nodeAlign="justify"
 						{...(steuerSankeySortProps as Record<string, unknown>)}
 						let:nodes
@@ -324,22 +375,44 @@
 								{#if variant === 'steuernPool' && n.column === 2}
 									<text
 										x={xMid}
-										y={(n.y0 ?? 0) - 8}
+										y={(n.y0 ?? 0) - mapLabelPad}
 										dominant-baseline="auto"
 										text-anchor="middle"
-										class="pointer-events-none fill-foreground font-sans text-[11px] leading-tight font-medium"
-										style="paint-order: stroke; stroke: var(--card); stroke-width: 3px;"
+										class="pointer-events-none fill-foreground font-sans leading-tight font-medium {mapSvgLabelPx ===
+										null
+											? mapMode
+												? 'text-[13px]'
+												: 'text-[11px]'
+											: ''}"
+										style="paint-order: stroke; stroke: var(--card); stroke-width: {mapSvgLabelPx === null
+											? mapMode
+												? 4
+												: 3
+											: mapLabelStrokePx}px;{mapSvgLabelPx !== null
+											? ` font-size:${mapSvgLabelPx}px;`
+											: ''}"
 									>
 										{nodeLabelText(n)}
 									</text>
 								{:else}
 									<text
-										x={n.column === 0 ? (n.x0 ?? 0) - 8 : (n.x1 ?? 0) + 8}
+										x={n.column === 0 ? (n.x0 ?? 0) - mapLabelPad : (n.x1 ?? 0) + mapLabelPad}
 										y={yMid}
 										dominant-baseline="middle"
 										text-anchor={n.column === 0 ? 'end' : 'start'}
-										class="pointer-events-none fill-foreground font-sans text-[11px] leading-tight font-medium"
-										style="paint-order: stroke; stroke: var(--card); stroke-width: 3px;"
+										class="pointer-events-none fill-foreground font-sans leading-tight font-medium {mapSvgLabelPx ===
+										null
+											? variant === 'steuernPool' || matchSteuernPoolLayout
+												? 'text-[13px]'
+												: 'text-[11px]'
+											: ''}"
+										style="paint-order: stroke; stroke: var(--card); stroke-width: {mapSvgLabelPx === null
+											? variant === 'steuernPool' || matchSteuernPoolLayout
+												? 4
+												: 3
+											: mapLabelStrokePx}px;{mapSvgLabelPx !== null
+											? ` font-size:${mapSvgLabelPx}px;`
+											: ''}"
 									>
 										{nodeLabelText(n)}
 									</text>
@@ -354,34 +427,36 @@
 
 	{#if linkHover}
 		<div
-			class="border-border/80 bg-popover text-popover-foreground pointer-events-none fixed z-50 max-w-[min(100vw-24px,280px)] rounded-lg border px-3 py-2.5 text-sm shadow-md ring-1 ring-foreground/5"
-			style:left="{linkHover.clientX + 14}px"
-			style:top="{linkHover.clientY + 14}px"
+			use:tooltipPortal
+			class="border-border/90 bg-popover text-popover-foreground pointer-events-none fixed max-w-[min(100vw-40px,440px)] rounded-xl border-2 px-5 py-4 text-base leading-relaxed shadow-lg ring-1 ring-foreground/10"
+			style:left="{linkHover.clientX + 16}px"
+			style:top="{linkHover.clientY + 16}px"
 			role="status"
 		>
 			<p class="leading-snug">
-				<span class="text-muted-foreground">Von </span>
-				<span class="text-foreground font-medium">{linkHover.sourceLabel}</span>
+				<span class="text-muted-foreground text-[0.95em]">Von </span>
+				<span class="text-foreground text-lg font-semibold">{linkHover.sourceLabel}</span>
 			</p>
-			<p class="mt-1 leading-snug">
-				<span class="text-muted-foreground">Nach </span>
-				<span class="text-foreground font-medium">{linkHover.targetLabel}</span>
+			<p class="mt-2 leading-snug">
+				<span class="text-muted-foreground text-[0.95em]">Nach </span>
+				<span class="text-foreground text-lg font-semibold">{linkHover.targetLabel}</span>
 			</p>
-			<p class="text-foreground mt-2 font-mono text-base font-semibold tabular-nums">
+			<p class="text-foreground mt-3 font-mono text-2xl font-bold tabular-nums tracking-tight">
 				{formatEur(linkHover.value)}
 			</p>
 		</div>
 	{:else if nodeHover}
 		<div
-			class="border-border/80 bg-popover text-popover-foreground pointer-events-none fixed z-50 max-w-[min(100vw-24px,280px)] rounded-lg border px-3 py-2.5 text-sm shadow-md ring-1 ring-foreground/5"
-			style:left="{nodeHover.clientX + 14}px"
-			style:top="{nodeHover.clientY + 14}px"
+			use:tooltipPortal
+			class="border-border/90 bg-popover text-popover-foreground pointer-events-none fixed max-w-[min(100vw-40px,440px)] rounded-xl border-2 px-5 py-4 text-base leading-relaxed shadow-lg ring-1 ring-foreground/10"
+			style:left="{nodeHover.clientX + 16}px"
+			style:top="{nodeHover.clientY + 16}px"
 			role="status"
 		>
-			<p class="text-foreground font-medium leading-snug">{nodeHover.label}</p>
-			<p class="text-muted-foreground mt-0.5 text-xs leading-snug">{nodeHover.role}</p>
-			<p class="text-muted-foreground mt-2 text-xs leading-snug">Fluss (Summe)</p>
-			<p class="text-foreground font-mono text-base font-semibold tabular-nums">
+			<p class="text-foreground text-lg font-semibold leading-snug">{nodeHover.label}</p>
+			<p class="text-muted-foreground mt-1.5 text-sm leading-snug">{nodeHover.role}</p>
+			<p class="text-muted-foreground mt-3 text-sm font-medium leading-snug">Fluss (Summe)</p>
+			<p class="text-foreground mt-1 font-mono text-2xl font-bold tabular-nums tracking-tight">
 				{formatEur(nodeHover.value)}
 			</p>
 		</div>

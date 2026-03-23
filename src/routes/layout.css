@@ -62,3 +62,8 @@
 .map-canvas-scroll {
 	-webkit-overflow-scrolling: touch;
 }
+
+.map-pan-surface {
+	-webkit-user-select: none;
+	user-select: none;
+}

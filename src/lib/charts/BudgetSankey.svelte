@@ -123,14 +123,35 @@
 
 	const chartPadding = $derived.by(() => {
 		if (mapMode && (variant === 'steuernPool' || matchSteuernPoolLayout)) {
-			const base = { top: 44, bottom: 32, left: 300, right: 288 };
-			if (mapSvgLabelPx !== null && mapSvgLabelPx > 14) {
-				const e = mapSvgLabelPx - 13;
+			const base = { top: 52, bottom: 44, left: 340, right: 312 };
+			if (mapSvgLabelPx !== null) {
+				const lx = mapSvgLabelPx;
+				/** Zusätzlicher Rand für Beschriftungen (Scrollbarand in +page fängt Überhang ab). */
+				const estLeft = Math.min(720, Math.round(lx * 13));
+				const estRight = Math.min(620, Math.round(lx * 11));
+				let left = base.left + estLeft;
+				let right = base.right + estRight;
+				/** d3-sankey braucht genug Innenbreite — sonst kollabieren alle Spalten auf eine x-Position. */
+				const minInnerW = Math.min(2400, Math.max(1600, mapWidth * 0.5));
+				const maxPadH = mapWidth - minInnerW;
+				if (left + right > maxPadH) {
+					const baseSum = base.left + base.right;
+					const room = Math.max(0, maxPadH - baseSum);
+					const add = estLeft + estRight;
+					if (add > 0 && room > 0) {
+						const s = room / add;
+						left = base.left + Math.floor(estLeft * s);
+						right = base.right + Math.floor(estRight * s);
+					} else {
+						left = base.left;
+						right = maxPadH - base.left;
+					}
+				}
 				return {
-					top: Math.round(base.top + e * 1.15),
-					bottom: base.bottom,
-					left: Math.round(base.left + e * 0.5),
-					right: Math.round(base.right + e * 0.4),
+					top: Math.round(base.top + lx * 1.05 + 12),
+					bottom: Math.round(base.bottom + lx * 0.55),
+					left,
+					right,
 				};
 			}
 			return base;
@@ -309,7 +330,7 @@
 		style={mapMode ? `width:${mapWidth}px;height:${mapHeight}px;` : undefined}
 	>
 		<div
-			class="absolute inset-0 min-h-0"
+			class="absolute inset-0 min-h-0 overflow-visible"
 			onpointerleave={clearChartTooltips}
 			role="presentation"
 		>
